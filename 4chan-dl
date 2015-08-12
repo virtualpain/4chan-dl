@@ -7,23 +7,27 @@ if (require "nokogiri") == false
 	abort
 end
 
-last_url = nil
-if File.exists? '_last_url'
-	last_url = File.read('_last_url')
-	puts "Last URL: #{last_url}"
-end
+if ARGV[0].nil?
+	last_url = nil
+	if File.exists? '_last_url'
+		last_url = File.read('_last_url')
+		puts "Last URL: #{last_url}"
+	end
 
-print "Type 4chan thread url: "
-url = STDIN.gets.chomp
-if url.nil? or url.empty?
-	if not last_url.nil?
-		url = last_url
+	print "Type 4chan thread url: "
+	url = STDIN.gets.chomp
+	if url.nil? or url.empty?
+		if not last_url.nil?
+			url = last_url
+		else
+			puts "Error: No URL given!"
+			abort
+		end
 	else
-		puts "Error: No URL given!"
-		abort
+		File.write("_last_url",url)
 	end
 else
-	File.write("_last_url",url)
+	url = ARGV[0]
 end
 
 matches = url.match(/http\:\/\/boards\.4chan\.org\/([a-zA-Z0-9]+)\/thread\/([0-9]+)\/(.*)/)
@@ -38,7 +42,9 @@ if not File.exists? thread_dir
 	puts "Creating destination directory..."
 	FileUtils.mkdir_p thread_dir
 end
-File.write(File.join(thread_dir,'name'),name)
+if not name.nil?
+	File.write(File.join(thread_dir,'name'),name)
+end
 
 puts "Download page..."
 html_doc = Nokogiri::HTML(open(url))
