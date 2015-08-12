@@ -1,0 +1,73 @@
+#!/usr/bin/env ruby
+
+require "fileutils"
+require "open-uri"
+if (require "nokogiri") == false
+	puts "Please install nokogiri gem!"
+	abort
+end
+
+last_url = nil
+if File.exists? '_last_url'
+	last_url = File.read('_last_url')
+	puts "Last URL: #{last_url}"
+end
+
+print "Type 4chan thread url: "
+url = STDIN.gets.chomp
+if url.nil? or url.empty?
+	if not last_url.nil?
+		url = last_url
+	else
+		puts "Error: No URL given!"
+		abort
+	end
+else
+	File.write("_last_url",url)
+end
+
+matches = url.match(/http\:\/\/boards\.4chan\.org\/([a-zA-Z0-9]+)\/thread\/([0-9]+)\/(.*)/)
+board = matches[1]
+thread_id = matches[2]
+name = matches[3]
+base_dir = "images"
+board_dir = File.join(base_dir,board)
+thread_dir = File.join(board_dir,thread_id)
+
+if not File.exists? thread_dir
+	puts "Creating destination directory..."
+	FileUtils.mkdir_p thread_dir
+end
+File.write(File.join(thread_dir,'name'),name)
+
+puts "Download page..."
+html_doc = Nokogiri::HTML(open(url))
+
+puts "Gathering images..."
+images = html_doc.css("a.fileThumb")
+puts "Got #{images.size} images"
+
+count = 0
+max = images.size
+
+images.each do |image|
+	image_url = "http:#{image.attr('href')}"
+	image_name = File.basename(image_url)
+	count+=1
+	if File.exists? File.join(thread_dir,image_name)
+		puts "Image #{image_name} already exists, skipping..."
+		next
+	else
+		print "Downloading #{count}/#{max} #{image_name}..."
+		begin
+			open(File.join(thread_dir,image_name),'wb') do |f|
+				f << open(image_url).read
+			end
+			puts "done"
+			
+		rescue EOFError => e
+			puts "failed!"
+			FileUtils.rm_rf File.join(thread_dir,image_name)
+		end
+	end
+end
