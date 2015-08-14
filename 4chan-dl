@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 
+require "json"
 require "fileutils"
 require "open-uri"
 if (require "nokogiri") == false
@@ -16,19 +17,42 @@ if ARGV[0].nil?
 
 	print "Type 4chan thread url: "
 	url = STDIN.gets.chomp
-	if url.nil? or url.empty?
-		if not last_url.nil?
-			url = last_url
-		else
-			puts "Error: No URL given!"
-			abort
-		end
-	else
-		File.write("_last_url",url)
-	end
 else
 	url = ARGV[0]
 end
+
+# Save to last URL
+if url.nil? or url.empty?
+	if not last_url.nil?
+		url = last_url
+	else
+		puts "Error: No URL given!"
+		abort
+	end
+else
+	File.write("_last_url",url)
+end
+
+# Checking if URL is 4chan thread URL
+umatch = url.match(/http\:\/\/boards\.4chan\.org\/[a-zA-Z0-9]+\/thread\/[0-9]+(\/.*)?/)
+if umatch.nil?
+	puts "#{url} is not 4chan thread URL!"
+	abort
+end
+
+# We are making the history here
+if not File.exists? '_history'
+	puts "History file not found, creating one..."
+	File.write('_history',JSON.generate([url]))
+else
+	history = JSON.parse(File.read('_history'))
+	if history.include? url
+		history.delete url
+	end
+	history += [url]
+	File.write('_history',history)
+end
+
 
 matches = url.match(/http\:\/\/boards\.4chan\.org\/([a-zA-Z0-9]+)\/thread\/([0-9]+)\/(.*)/)
 board = matches[1]
@@ -56,24 +80,40 @@ puts "Got #{images.size} images"
 count = 0
 max = images.size
 
+if File.exists? 'downloading'
+	puts "Removing existing cache..."
+	File.delete 'downloading'
+end
 images.each do |image|
 	image_url = "http:#{image.attr('href')}"
 	image_name = File.basename(image_url)
 	count+=1
 	if File.exists? File.join(thread_dir,image_name)
-		puts "Image #{image_name} already exists, skipping..."
-		next
-	else
-		print "Downloading #{count}/#{max} #{image_name}..."
-		begin
-			open(File.join(thread_dir,image_name),'wb') do |f|
-				f << open(image_url).read
-			end
-			puts "done"
-			
-		rescue EOFError => e
-			puts "failed!"
-			FileUtils.rm_rf File.join(thread_dir,image_name)
+		# TODO check remote file size and compare with existing one in local
+		if File.size(File.join(thread_dir,image_name)) > 0
+			puts "Image #{image_name} already exists, skipping..."
+			next
+		else
+			puts "File exists, but I think it is not complete, lets download it again"
 		end
 	end
+	print "Downloading #{count}/#{max} #{image_name}..."
+	begin
+		open('downloading','wb') do |f|
+			f << open(image_url).read
+		end
+		FileUtils.mv('downloading',File.join(thread_dir,image_name))
+		puts "done (#{File.size(File.join(thread_dir,image_name))/1000}kb)"
+
+	rescue EOFError => e
+		puts "failed!"
+		FileUtils.rm_rf File.join(thread_dir,image_name)
+	rescue SocketError => e
+		puts "failed! Check the connection!"
+	end
+end
+
+if File.exists? 'downloading'
+	puts "Removing cache..."
+	File.delete 'downloading'
 end
